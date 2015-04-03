@@ -1,0 +1,20 @@
+{
+    "manifest_version": 2,
+    "name": "BlockBuilding",
+    "version": "0",
+    "description": "block things I don't like",
+    "author": "Harmen",
+    "background": {
+        "scripts": ["background.js"]
+    },
+    "homepage_url": "https://github.com/alicebob/blockbuilding",
+    "minimum_chrome_version": "22.0",
+    "permissions": [
+        "webRequest",
+        "webRequestBlocking",
+        "<all_urls>"
+    ],
+    "web_accessible_resources": [
+        "empty.js"
+    ]
+}

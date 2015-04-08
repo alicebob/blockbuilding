@@ -10,11 +10,13 @@
     "homepage_url": "https://github.com/alicebob/blockbuilding",
     "minimum_chrome_version": "22.0",
     "permissions": [
+        "tabs",
         "webRequest",
         "webRequestBlocking",
         "<all_urls>"
     ],
     "web_accessible_resources": [
-        "empty.js"
+        "empty.js",
+        "empty.png"
     ]
 }

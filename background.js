@@ -2,28 +2,32 @@ function onBeforeRequestHandler(details) {
     // console.log("serving: ", details.url, details);
     switch (details.type) {
         case "main_frame":
-            break;
-        case "sub_frame":
-            break;
-        case "stylesheet":
+            console.log("MAIN" , details.url);
             break;
         case "image":
-            console.log("allow image: ", details.url);
-            break;
-        case "object":
-            console.log("allow object: ", details.url);
-            break;
-        case "script":
-            var m = matches_blacklist(blacklist_js, details.url);
+            var m = matches_blacklist(blacklist, details.url);
             if (! m.accepted) {
-                console.log("block script " + details.url + ": " + m.reason);
+                // console.log("block script " + details.url + ": " + m.reason);
+                log_block(details, m.reason);
+                return { "redirectUrl": chrome.extension.getURL("empty.png") };
+            }
+            log_allow(details, m.reason);
+            break;
+        case "sub_frame":
+        case "stylesheet":
+        case "script":
+        case "xmlhttprequest":
+            var m = matches_blacklist(blacklist, details.url);
+            if (! m.accepted) {
+                log_block(details, m.reason);
+                // console.log("block script " + details.url + ": " + m.reason);
                 // return { "redirectUrl": chrome.extension.getURL("empty.js") };
                 return { "redirectUrl": "about://blank" };
             }
-            console.log("allow script " + details.url + ": " + m.reason);
+            log_allow(details, m.reason);
             break;
-        case "xmlhttprequest":
-            console.log("allow xmlhttprequest: ", details.url);
+        case "object":
+            log_allow(details, "");
             break;
         case "other":
             // extension, fonts.
@@ -92,14 +96,24 @@ function match_domain(bl, domain, prefix) {
     return false;
 }
 
-blacklist_js = {};
+function log_block(details, reason) {
+    chrome.tabs.get(details.tabId, function(tab) {
+        console.log("block " + details.type + " " + details.url + ": " + reason + ", src: " + tab.url);
+    });
+}
 
-function block(hostname, js_pages) {
-    if (js_pages === undefined) {
-        // block all JS from this domain.
-        blacklist_js[hostname] = null
+function log_allow(details, reason) {
+    console.log("allow " + details.type + " " + details.url + ": " + reason);
+}
+
+blacklist = {};
+
+function block(hostname, pages) {
+    if (pages === undefined) {
+        // block everything from this domain.
+        blacklist[hostname] = null
     } else {
-        blacklist_js[hostname] = js_pages;
+        blacklist[hostname] = pages;
     }
 }
 
@@ -128,5 +142,10 @@ block("www.googleadservices.com")
 block(".captifymedia.com") // wired
 block(".vdna-assets.com") // wired
 block(".inspectlet.com") // wired
+block("clc.stackoverflow.com")
+block(".ioam.de") // spiegel.de
+block(".meetrics.net") // spiegel.de
+block(".adition.com") // spiegel.de
+block("c.spiegel.de") // spiegel.de
+block(".mxcdn.net") // spiegel.de
 // TODO: kill image http://sa.bbc.co.uk/bbc/bbc/s
-// TODO: kill image http://b.scorecardresearch.com

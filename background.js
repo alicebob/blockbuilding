@@ -1,36 +1,47 @@
+var log_daemon = "http://localhost:1709/log";
+
+// tabID -> last loaded URL.
+var activeURL = {};
+
 function onBeforeRequestHandler(details) {
     // console.log("serving: ", details.url, details);
     switch (details.type) {
         case "main_frame":
-            console.log("MAIN" , details.url);
+            // console.log("MAIN" , details.url);
+            activeURL[details.tabId] = details.url;
             break;
         case "image":
             var m = matches_blacklist(blacklist, details.url);
             if (! m.accepted) {
                 // console.log("block script " + details.url + ": " + m.reason);
-                log_block(details, m.reason);
+                log("block", details, m.reason);
                 return { "redirectUrl": chrome.extension.getURL("empty.png") };
             }
-            log_allow(details, m.reason);
+            log("allow", details, m.reason, activeURL[details.tabId]);
             break;
         case "sub_frame":
         case "stylesheet":
         case "script":
         case "xmlhttprequest":
+            if (details.url === log_daemon) {
+                break;
+            }
+            // There are rumors syncronous xmlhttprequest are not handled here.
+
             var m = matches_blacklist(blacklist, details.url);
             if (! m.accepted) {
-                log_block(details, m.reason);
+                log("block", details, m.reason, activeURL[details.tabId]);
                 // console.log("block script " + details.url + ": " + m.reason);
                 // return { "redirectUrl": chrome.extension.getURL("empty.js") };
                 return { "redirectUrl": "about://blank" };
             }
-            log_allow(details, m.reason);
+            log("allow", details, m.reason, activeURL[details.tabId]);
             break;
         case "object":
-            log_allow(details, "");
+            log("allow", details, "an object", activeURL[details.tabId]);
             break;
         case "other":
-            // extension, fonts.
+            log("allow", details, "other", activeURL[details.tabId]);
             break;
     }
     return { "cancel": false };
@@ -96,15 +107,24 @@ function match_domain(bl, domain, prefix) {
     return false;
 }
 
-function log_block(details, reason) {
-    chrome.tabs.get(details.tabId, function(tab) {
-        console.log("block " + details.type + " " + details.url + ": " + reason + ", src: " + tab.url);
-    });
+function log(action, details, reason, tabURL) {
+    // chrome.tabs.get(details.tabId, function(tab) {
+        // console.log(action+ " " + details.type + " " + details.url + ": " + reason + ", src: " + tab.url);
+    // });
+    // console.log(action+ " " + details.type + " " + details.url + ": " + reason + ", src: " + tabURL);
+    var req = new XMLHttpRequest();
+    req.open('POST', log_daemon);
+    req.send(JSON.stringify({
+        "action": action,
+        "type": details.type,
+        "url": details.url,
+        "reason": reason,
+        "tabId": details.tabId,
+        "tab": tabURL,
+    }));
+    // some error checks here might be nice.
 }
 
-function log_allow(details, reason) {
-    console.log("allow " + details.type + " " + details.url + ": " + reason);
-}
 
 blacklist = {};
 

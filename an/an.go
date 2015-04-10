@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"os"
 	"sort"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 type DomainStat struct {
@@ -16,6 +18,7 @@ type DomainStat struct {
 	Image      int
 	StyleSheet int
 	Script     int
+	SubFrame   int
 	Other      int
 	SrcDomains map[string]int
 }
@@ -42,6 +45,10 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		if rURL.Scheme == "chrome-extension" {
+			continue
+		}
+
 		tURL, err := url.Parse(r[4])
 		if err != nil {
 			panic(err)
@@ -62,10 +69,10 @@ func main() {
 			d.StyleSheet++
 		case "script":
 			d.Script++
+		case "sub_frame":
+			d.SubFrame++
 		case "other":
 			d.Other++
-		case "sub_frame":
-			//
 		default:
 			panic(typ)
 		}
@@ -83,7 +90,34 @@ func main() {
 	}
 	sort.Sort(sort.Reverse(BySrcCount(st)))
 	for _, s := range st {
-		fmt.Printf("%s: %v\n", s.Domain, s)
+		fmt.Printf("%s", s.Domain)
+		eff, err := publicsuffix.EffectiveTLDPlusOne(s.Domain)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf(" - eff: %s ", eff)
+		fmt.Printf("\n    ")
+		fmt.Printf("domains: %v ", s.SrcDomains)
+		fmt.Printf("\n    ")
+		if s.XMLHTTP > 0 {
+			fmt.Printf(", XMLHTTP: %d", s.XMLHTTP)
+		}
+		if s.Image > 0 {
+			fmt.Printf(", Image: %d", s.Image)
+		}
+		if s.StyleSheet > 0 {
+			fmt.Printf(", StyleSheet: %d", s.StyleSheet)
+		}
+		if s.Script > 0 {
+			fmt.Printf(", Script: %d", s.Script)
+		}
+		if s.SubFrame > 0 {
+			fmt.Printf(", SubFrame: %d", s.SubFrame)
+		}
+		if s.Other > 0 {
+			fmt.Printf(", Other: %d", s.Other)
+		}
+		fmt.Printf("\n")
 	}
 }
 

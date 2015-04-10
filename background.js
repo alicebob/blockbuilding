@@ -1,10 +1,14 @@
-var log_daemon = "http://localhost:1709/log";
+var log_daemon = "http://localhost:1709";
 
 // tabID -> last loaded URL.
 var activeURL = {};
 
 function onBeforeRequestHandler(details) {
     // console.log("serving: ", details.url, details);
+    if (has_prefix(details.url, log_daemon)) {
+        return;
+    }
+
     switch (details.type) {
         case "main_frame":
             // console.log("MAIN" , details.url);
@@ -23,9 +27,6 @@ function onBeforeRequestHandler(details) {
         case "stylesheet":
         case "script":
         case "xmlhttprequest":
-            if (details.url === log_daemon) {
-                break;
-            }
             // There are rumors syncronous xmlhttprequest are not handled here.
 
             var m = matches_blacklist(blacklist, details.url);
@@ -88,23 +89,27 @@ function matches_blacklist(bl, url) {
 
 // match_domain is true is domain is a key in bl, and prefix matched.
 function match_domain(bl, domain, prefix) {
-    var prefixes = bl[domain];
-    if (prefixes === undefined) {
-        // not present
+    var paths = bl[domain];
+    if (paths === undefined) {
+        // domain not present
         return false;
     }
-    if (prefixes === null) {
-        // all prefixes are blocked
+    if (paths === null) {
+        // all paths are blocked
         return true;
     }
     // prefix match
     var i = 0;
     for (; i < prefixes.length; i++) {
-        if (prefix.substr(0, prefixes[i].length) === prefixes[i]) {
+        if (has_prefix(prefix, prefixes[i])) {
             return true;
         }
     }
     return false;
+}
+
+function has_prefix(s, prefix) {
+    return s.substr(0, prefix.length) === prefix
 }
 
 function log(action, details, reason, tabURL) {
@@ -113,7 +118,7 @@ function log(action, details, reason, tabURL) {
     // });
     // console.log(action+ " " + details.type + " " + details.url + ": " + reason + ", src: " + tabURL);
     var req = new XMLHttpRequest();
-    req.open('POST', log_daemon);
+    req.open('POST', log_daemon + "/log");
     req.send(JSON.stringify({
         "action": action,
         "type": details.type,

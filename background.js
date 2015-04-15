@@ -114,10 +114,6 @@ function has_prefix(s, prefix) {
 }
 
 function log(action, details, reason, tabURL) {
-    // chrome.tabs.get(details.tabId, function(tab) {
-        // console.log(action+ " " + details.type + " " + details.url + ": " + reason + ", src: " + tab.url);
-    // });
-    // console.log(action+ " " + details.type + " " + details.url + ": " + reason + ", src: " + tabURL);
     var req = new XMLHttpRequest();
     req.open('POST', log_daemon + "/log");
     req.send(JSON.stringify({
@@ -134,24 +130,15 @@ function log(action, details, reason, tabURL) {
 
 blacklist = {};
 
-function block(hostname, pages) {
-    if (pages === undefined) {
-        // block everything from this domain.
-        blacklist[hostname] = null
-    } else {
-        blacklist[hostname] = pages;
-    }
-}
-
 function load_blacklist() {
     new_bl = {}
     var req = new XMLHttpRequest();
     req.onreadystatechange = function () {
         if (this.readyState === 4){
-            // todo: check status
+            // todo: check status code
             entries = JSON.parse(this.response);
             for (var i = 0; i < entries.length; i++) {
-                console.log("block", entries[i]);
+                // console.log("block", entries[i]);
                 new_bl[entries[i]] = null;
             }
             blacklist = new_bl;
@@ -164,35 +151,19 @@ function load_blacklist() {
 load_blacklist();
 setInterval(load_blacklist, blacklistReload);
 
+/*
+function block(hostname, pages) {
+    if (pages === undefined) {
+        // block everything from this domain.
+        blacklist[hostname] = null
+    } else {
+        blacklist[hostname] = pages;
+    }
+}
 block("js-agent.newrelic.com");
 block("edge.quantserve.com");
 block("static.chartbeat.com");
 block("stats.g.doubleclick.net");
-block("www.googletagservices.com"); // no idea what this is
-block("www.googletagmanager.com"); // no idea what this is
-block("www.google-analytics.com");
-block("www.google.com", ["/jsapi"]);
-block("a.disquscdn.com", ["/count"]);
-block(".disqus.com", ["/count"]); // http://thedissolve.disqus.com/count.js 
-// block("collector-cdn.github.com"); // for _stats, mostly.
-block(".gamer-network.net"); // src: RPS
 block("b.scorecardresearch.com");
-block(".taboola.com"); // src: RPS
-block(".krxd.net"); // src: bbc.com
-block("me-cdn.effectivemeasure.net"); // bbc.com
-block(".ivwbox.de"); // bbc.com
-block("pagead2.googlesyndication.com", ["/pagead/show_ads.js"])
-block("apis.google.com", ["/js/plusone.js"])
-block("connect.facebook.net")
-block("graph.facebook.com")
-block("www.googleadservices.com")
-block(".captifymedia.com") // wired
-block(".vdna-assets.com") // wired
-block(".inspectlet.com") // wired
-block("clc.stackoverflow.com")
-block(".ioam.de") // spiegel.de
-block(".meetrics.net") // spiegel.de
-block(".adition.com") // spiegel.de
-block("c.spiegel.de") // spiegel.de
-block(".mxcdn.net") // spiegel.de
-// TODO: kill image http://sa.bbc.co.uk/bbc/bbc/s
+block(".google-analytics.com");
+*/

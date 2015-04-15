@@ -36,17 +36,10 @@ type Entry struct {
 }
 
 func main() {
-	f, err := os.OpenFile(logFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
-	c := csv.NewWriter(f)
-	defer c.Flush()
 
 	r := httprouter.New()
 	r.GET("/", indexHandler)
-	r.POST("/log", makeLogHandler(c))
+	r.POST("/log", logHandler)
 	r.POST("/block/:domain", blockHandler)
 	r.POST("/ignore/:domain", ignoreHandler)
 	r.GET("/list", listHandler)
@@ -135,25 +128,31 @@ Ordered by subdomain count:<br />
 {{end}}
 `))
 
-func makeLogHandler(f *csv.Writer) func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	return func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-		b, _ := ioutil.ReadAll(r.Body)
-		var e Entry
-		if err := json.Unmarshal(b, &e); err != nil {
-			log.Printf("json: %q: %v", b, err)
-			return
-		}
-		// log.Printf("body: %q", b)
-		f.Write([]string{
-			time.Now().UTC().Format(time.RFC3339),
-			e.Action,
-			e.Type,
-			e.URL,
-			e.TabURL,
-		})
-		f.Flush()
-		fmt.Fprintf(w, "thanks!")
+func logHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	b, _ := ioutil.ReadAll(r.Body)
+	var e Entry
+	if err := json.Unmarshal(b, &e); err != nil {
+		log.Printf("json: %q: %v", b, err)
+		return
 	}
+
+	f, err := os.OpenFile(logFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+	c := csv.NewWriter(f)
+
+	// log.Printf("body: %q", b)
+	c.Write([]string{
+		time.Now().UTC().Format(time.RFC3339),
+		e.Action,
+		e.Type,
+		e.URL,
+		e.TabURL,
+	})
+	c.Flush()
+	fmt.Fprintf(w, "thanks!")
 }
 
 // blockHandler adds the domain to the block list
@@ -192,13 +191,19 @@ func listHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 // statsHandler has a page with all unblocked domains
 func statsHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	w.Header().Set("Content-type", "text/html")
+	block, err := readDomainFile(blocklistFile)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
 	ign, err := readDomainFile(ignoreFile)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	stat, err := readStats(ign)
+	stat, err := readStats(block, ign)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return

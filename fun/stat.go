@@ -23,7 +23,12 @@ type DomainStat struct {
 }
 type DomainStats map[string]DomainStat
 
-func readStats(ignore []string) (DomainStats, error) {
+// readStats reads the log and generate some statistics.
+// Only non-blocked entries are considered.
+// Domains matching block will be ignored even when they are accepted in the
+// log file. The usecase is to hide log entries from before a block was added.
+// Domains matching ignore will be ignored.
+func readStats(block, ignore []string) (DomainStats, error) {
 	f, err := os.Open(logFile)
 	defer f.Close()
 	if err != nil {
@@ -41,12 +46,7 @@ line:
 			}
 			panic(err)
 		}
-		for _, i := range ignore {
-			if matchesDomain(r[3], i) {
-				log.Printf("hiding %s thanks to %s", r[3], i)
-				continue line
-			}
-		}
+
 		e := Entry{
 			// r[0] is timestamp
 			Action: r[1],
@@ -56,14 +56,23 @@ line:
 			TabURL: r[4],
 		}
 
-		switch e.Action {
-		case "allow":
-			s.Count(e)
-		case "block":
-			//
-		default:
-			log.Printf("unknown action: %s", e.Action)
+		if e.Action != "allow" {
+			continue line
 		}
+
+		for _, i := range block {
+			if matchesDomain(e.URL, i) {
+				log.Printf("post-facto blocking %s thanks to %s", r[3], i)
+				continue line
+			}
+		}
+		for _, i := range ignore {
+			if matchesDomain(r[3], i) {
+				// log.Printf("hiding %s thanks to %s", r[3], i)
+				continue line
+			}
+		}
+		s.Count(e)
 	}
 	return s, nil
 }

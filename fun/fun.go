@@ -10,7 +10,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -34,25 +33,7 @@ type Entry struct {
 	TabURL string `json:"tab"`
 }
 
-type DomainStat struct {
-	Domain     string
-	URLs       map[string]int
-	SrcDomains map[string]int
-	XMLHTTP    int
-	Image      int
-	StyleSheet int
-	Script     int
-	SubFrame   int
-	Other      int
-}
-type DomainStats map[string]DomainStat
-
 func main() {
-	var (
-		allowed = DomainStats{}
-		blocked = DomainStats{}
-	)
-
 	f, err := os.OpenFile(logFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
 	if err != nil {
 		log.Fatal(err)
@@ -62,10 +43,9 @@ func main() {
 	defer c.Flush()
 
 	http.HandleFunc("/", indexHandler)
-	http.HandleFunc("/log", makeLogHandler(allowed, blocked, c))
+	http.HandleFunc("/log", makeLogHandler(c))
 	http.HandleFunc("/list", listHandler)
-	http.HandleFunc("/stats/allowed", makeStatsHandler(allowed))
-	http.HandleFunc("/stats/blocked", makeStatsHandler(blocked))
+	http.HandleFunc("/domains", statsHandler)
 
 	fmt.Printf("listening on %s...\n", listen)
 	log.Fatal(http.ListenAndServe(listen, nil))
@@ -79,25 +59,16 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 var tmplIndex = template.Must(template.New("index").Parse(`Stats:<br />
-<a href="/stats/blocked">Blocked</a><br />
-<a href="/stats/allowed">Allowed</a><br />
+<a href="/domains">Domains by 3rdparty usage</a><br />
 `))
 
-func makeLogHandler(allowed, blocked DomainStats, f *csv.Writer) func(w http.ResponseWriter, r *http.Request) {
+func makeLogHandler(f *csv.Writer) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		b, _ := ioutil.ReadAll(r.Body)
 		var e Entry
 		if err := json.Unmarshal(b, &e); err != nil {
 			log.Printf("json: %q: %v", b, err)
 			return
-		}
-		switch e.Action {
-		case "allow":
-			allowed.Count(e)
-		case "block":
-			blocked.Count(e)
-		default:
-			log.Printf("unknown action: %s", e.Action)
 		}
 		// log.Printf("body: %q", b)
 		f.Write([]string{
@@ -112,6 +83,7 @@ func makeLogHandler(allowed, blocked DomainStats, f *csv.Writer) func(w http.Res
 	}
 }
 
+// listHandler returns the blocklist.
 func listHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
@@ -130,126 +102,58 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(js)
 }
 
-func makeStatsHandler(stat DomainStats) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-type", "text/plain")
-		fmt.Fprintf(w, "Ordered by subdomain count:\n")
-		st := make([]DomainStat, 0, len(stat))
-		for _, s := range stat {
-			st = append(st, s)
-		}
-		sort.Sort(sort.Reverse(BySrcCount(st)))
-		for _, s := range st {
-			fmt.Fprintf(w, "%s\n", s.Domain)
-			eff, err := publicsuffix.EffectiveTLDPlusOne(s.Domain)
-			if err != nil {
-				panic(err)
-			}
-			fmt.Fprintf(w, "  - eff: %s\n", eff)
-			fmt.Fprintf(w, "  - domains:\n")
-			for _, u := range orderMap(s.SrcDomains) {
-				fmt.Fprintf(w, "    - %s (%d)\n", u.string, u.int)
-			}
-			fmt.Fprintf(w, "  - usage: ")
-			if s.XMLHTTP > 0 {
-				fmt.Fprintf(w, " xmlhttp: %d", s.XMLHTTP)
-			}
-			if s.Image > 0 {
-				fmt.Fprintf(w, " image: %d", s.Image)
-			}
-			if s.StyleSheet > 0 {
-				fmt.Fprintf(w, " stylesheet: %d", s.StyleSheet)
-			}
-			if s.Script > 0 {
-				fmt.Fprintf(w, " script: %d", s.Script)
-			}
-			if s.SubFrame > 0 {
-				fmt.Fprintf(w, " subFrame: %d", s.SubFrame)
-			}
-			if s.Other > 0 {
-				fmt.Fprintf(w, " other: %d", s.Other)
-			}
-			fmt.Fprintf(w, "\n")
-			fmt.Fprintf(w, "  - urls:\n")
-			for _, u := range orderMap(s.URLs) {
-				fmt.Fprintf(w, "    - %s (%d)\n", u.string, u.int)
-			}
-			fmt.Fprintf(w, "\n")
-		}
-	}
-}
-
-//TODO: lock
-func (s DomainStats) Count(e Entry) {
-	rURL, err := url.Parse(e.URL)
+func statsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-type", "text/plain")
+	stat, err := readStats()
 	if err != nil {
-		panic(err)
-	}
-	if rURL.Scheme == "chrome-extension" {
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	tURL, err := url.Parse(e.TabURL)
-	if err != nil {
-		panic(err)
+	fmt.Fprintf(w, "Ordered by subdomain count:\n")
+	st := make([]DomainStat, 0, len(stat))
+	for _, s := range stat {
+		st = append(st, s)
 	}
-	if rURL.Host == tURL.Host {
-		// same domain. Not interesting.
-		return
+	sort.Sort(sort.Reverse(BySrcCount(st)))
+	for _, s := range st {
+		fmt.Fprintf(w, "%s\n", s.Domain)
+		pubsuf, err := publicsuffix.EffectiveTLDPlusOne(s.Domain)
+		if err != nil {
+			log.Printf("publicsuffix for %s: %s", s.Domain, err)
+			pubsuf = "unknown"
+		}
+		fmt.Fprintf(w, "  - public suffix: %s\n", pubsuf)
+		fmt.Fprintf(w, "  - domains:\n")
+		for _, u := range orderMap(s.SrcDomains) {
+			fmt.Fprintf(w, "    - %s (%d)\n", u.string, u.int)
+		}
+		fmt.Fprintf(w, "  - usage: ")
+		if s.XMLHTTP > 0 {
+			fmt.Fprintf(w, " xmlhttp: %d", s.XMLHTTP)
+		}
+		if s.Image > 0 {
+			fmt.Fprintf(w, " image: %d", s.Image)
+		}
+		if s.StyleSheet > 0 {
+			fmt.Fprintf(w, " stylesheet: %d", s.StyleSheet)
+		}
+		if s.Script > 0 {
+			fmt.Fprintf(w, " script: %d", s.Script)
+		}
+		if s.SubFrame > 0 {
+			fmt.Fprintf(w, " subFrame: %d", s.SubFrame)
+		}
+		if s.Other > 0 {
+			fmt.Fprintf(w, " other: %d", s.Other)
+		}
+		fmt.Fprintf(w, "\n")
+		fmt.Fprintf(w, "  - urls:\n")
+		for _, u := range orderMap(s.URLs) {
+			fmt.Fprintf(w, "    - %s (%d)\n", u.string, u.int)
+		}
+		fmt.Fprintf(w, "\n")
 	}
-
-	d := s[rURL.Host]
-
-	d.Domain = rURL.Host
-	switch e.Type {
-	case "xmlhttprequest":
-		d.XMLHTTP++
-	case "image":
-		d.Image++
-	case "stylesheet":
-		d.StyleSheet++
-	case "script":
-		d.Script++
-	case "sub_frame":
-		d.SubFrame++
-	case "other":
-		d.Other++
-	default:
-		panic(e.Type)
-	}
-
-	if d.SrcDomains == nil {
-		d.SrcDomains = map[string]int{}
-	}
-	d.SrcDomains[tURL.Host]++
-
-	if d.URLs == nil {
-		d.URLs = map[string]int{}
-	}
-	d.URLs[e.URL]++
-
-	s[rURL.Host] = d
-}
-
-type BySrcCount []DomainStat
-
-func (s BySrcCount) Len() int      { return len(s) }
-func (s BySrcCount) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
-func (s BySrcCount) Less(i, j int) bool {
-	if len(s[i].SrcDomains) != len(s[j].SrcDomains) {
-		return len(s[i].SrcDomains) < len(s[j].SrcDomains)
-	}
-	return s[i].Image < s[j].Image
-}
-
-// convert a string count map to a string lost, order by count desc.
-func orderMap(m map[string]int) stringCounts {
-	r := make(stringCounts, 0, len(m))
-	for k, c := range m {
-		r = append(r, stringCount{k, c})
-	}
-	sort.Sort(r)
-	return r
 }
 
 type stringCount struct {

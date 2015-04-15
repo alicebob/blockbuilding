@@ -11,15 +11,15 @@ import (
 )
 
 type DomainStat struct {
-	Domain     string
-	URLs       map[string]int
-	SrcDomains map[string]int
-	XMLHTTP    int
-	Image      int
-	StyleSheet int
-	Script     int
-	SubFrame   int
-	Other      int
+	Domain      string
+	URL         int
+	SrcDomains  map[string]int
+	XMLHTTPs    map[string]int
+	Images      map[string]int
+	StyleSheets map[string]int
+	Scripts     map[string]int
+	SubFrames   map[string]int
+	Others      map[string]int
 }
 type DomainStats map[string]DomainStat
 
@@ -95,35 +95,38 @@ func (s DomainStats) Count(e Entry) {
 		return
 	}
 
-	d := s[rURL.Host]
+	d, ok := s[rURL.Host]
+	if !ok {
+		d = DomainStat{
+			SrcDomains:  map[string]int{},
+			XMLHTTPs:    map[string]int{},
+			Images:      map[string]int{},
+			StyleSheets: map[string]int{},
+			Scripts:     map[string]int{},
+			SubFrames:   map[string]int{},
+			Others:      map[string]int{},
+		}
+	}
 
 	d.Domain = rURL.Host
 	switch e.Type {
 	case "xmlhttprequest":
-		d.XMLHTTP++
+		d.XMLHTTPs[e.URL]++
 	case "image":
-		d.Image++
+		d.Images[e.URL]++
 	case "stylesheet":
-		d.StyleSheet++
+		d.StyleSheets[e.URL]++
 	case "script":
-		d.Script++
+		d.Scripts[e.URL]++
 	case "sub_frame":
-		d.SubFrame++
+		d.SubFrames[e.URL]++
 	case "other":
-		d.Other++
+		d.Others[e.URL]++
 	default:
 		panic(e.Type)
 	}
-
-	if d.SrcDomains == nil {
-		d.SrcDomains = map[string]int{}
-	}
 	d.SrcDomains[tURL.Host]++
-
-	if d.URLs == nil {
-		d.URLs = map[string]int{}
-	}
-	d.URLs[e.URL]++
+	d.URL++
 
 	s[rURL.Host] = d
 }
@@ -136,7 +139,7 @@ func (s BySrcCount) Less(i, j int) bool {
 	if len(s[i].SrcDomains) != len(s[j].SrcDomains) {
 		return len(s[i].SrcDomains) < len(s[j].SrcDomains)
 	}
-	return s[i].Image < s[j].Image
+	return s[i].URL < s[j].URL
 }
 
 type stringCount struct {

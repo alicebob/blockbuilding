@@ -2,3 +2,4 @@
 .gstatic.com
 fonts.googleapis.com
 ajax.googleapis.com
+mail.google.com

@@ -32,3 +32,8 @@ mxcdn.net # spiegel.de
 # TODO: kill image http://sa.bbc.co.uk/bbc/bbc/s
 pixel.wp.com
 ssl.google-analytics.com
+.adverticum.net
+.2o7.net
+p.typekit.net
+stats.wp.com
+audit.median.hu

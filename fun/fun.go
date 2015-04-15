@@ -53,6 +53,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	w.Header().Set("Content-type", "text/html")
 	if err := tmplIndex.Execute(w, nil); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -64,13 +65,12 @@ type StatsDomain struct {
 	Domain       string
 	PublicSuffix string
 	SrcDomains   stringCounts
-	URLs         stringCounts
-	XMLHTTP      int
-	Image        int
-	StyleSheet   int
-	Script       int
-	SubFrame     int
-	Other        int
+	XMLHTTPs     stringCounts
+	Images       stringCounts
+	StyleSheets  stringCounts
+	Scripts      stringCounts
+	SubFrames    stringCounts
+	Others       stringCounts
 }
 type StatsPage struct {
 	Domains []StatsDomain
@@ -98,31 +98,75 @@ Ordered by subdomain count:<br />
 			<a href="#" onclick="block({{.Domain}}); return false">block</a>
 			<a href="#" onclick="ignore({{.Domain}}); return false">ignore</a>
 		<br />
+	<ul>
 	{{if .PublicSuffix}}
-		&nbsp;- suffix: {{.PublicSuffix}}
+		<li>suffix: {{.PublicSuffix}}
 				<a href="#" onclick="block({{.PublicSuffix}}); return false">block</a>
 				<a href="#" onclick="ignore({{.PublicSuffix}}); return false">ignore</a>
-			<br />
+		</li>
 	{{end}}
 
-	&nbsp;- used on domains:<br />
-	{{range .SrcDomains}}
-	&nbsp;&nbsp;&nbsp;- {{.String}} ({{.Count}})<br />
-	{{end}}
+	<li>used on domains:
+		<ul>
+		{{range .SrcDomains}}
+		<li>{{.String}} ({{.Count}})</li>
+		{{end}}
+		</ul>
+	</li>
 
-	&nbsp;- usage:
-		{{if .XMLHTTP}}xmlhttp: {{.XMLHTTP}}{{end}}
-		{{if .Image}}image: {{.Image}}{{end}}
-		{{if .StyleSheet}}stylesheet: {{.StyleSheet}}{{end}}
-		{{if .Script}}script: {{.Script}}{{end}}
-		{{if .SubFrame}}subFrame: {{.SubFrame}}{{end}}
-		{{if .Other}}other: {{.Other}}{{end}}
-		<br />
-
-	&nbsp;- urls:<br />
-	{{range .URLs}}
-	&nbsp;&nbsp;&nbsp;- {{.String}} ({{.Count}})<br />
-	{{end}}
+	<li>usage:
+		<ul>
+		{{if .XMLHTTPs}}<li>xmlhttps: {{len .XMLHTTPs}}<br />
+			<ul>
+				{{range .XMLHTTPs}}
+				<li>{{.String}} ({{.Count}})</li>
+				{{end}}
+			</ul>
+			</li>
+		{{end}}
+		{{if .Images}}<li>images: {{len .Images}}<br />
+			<ul>
+				{{range .Images}}
+				<li><a href="{{.String}}" target="_blank">{{.String}}</a> ({{.Count}})</li>
+				{{end}}
+			</ul>
+			</li>
+		{{end}}
+		{{if .StyleSheets}}<li>stylesheets: {{len .StyleSheets}}<br />
+			<ul>
+				{{range .StyleSheets}}
+				<li>{{.String}} ({{.Count}})</li>
+				{{end}}
+			</ul>
+			</li>
+		{{end}}
+		{{if .Scripts}}<li>scripts: {{len .Scripts}}<br />
+			<ul>
+				{{range .Scripts}}
+				<li>{{.String}} ({{.Count}})</li>
+				{{end}}
+			</ul>
+			</li>
+		{{end}}
+		{{if .SubFrames}}<li>subframes: {{len .SubFrames}}<br />
+			<ul>
+				{{range .SubFrames}}
+				<li>{{.String}} ({{.Count}})</li>
+				{{end}}
+			</ul>
+			</li>
+		{{end}}
+		{{if .Others}}<li>others: {{len .Others}}<br />
+			<ul>
+				{{range .Others}}
+				<li>{{.String}} ({{.Count}})</li>
+				{{end}}
+			</ul>
+			</li>
+		{{end}}
+		</ul>
+	</li>
+	</ul>
 
 	<br />
 {{end}}
@@ -190,7 +234,6 @@ func listHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
 // statsHandler has a page with all unblocked domains
 func statsHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	w.Header().Set("Content-type", "text/html")
 	block, err := readDomainFile(blocklistFile)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -225,17 +268,17 @@ func statsHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 			Domain:       s.Domain,
 			PublicSuffix: pubsuf,
 			SrcDomains:   orderMap(s.SrcDomains),
-			URLs:         orderMap(s.URLs),
-			XMLHTTP:      s.XMLHTTP,
-			Image:        s.Image,
-			StyleSheet:   s.StyleSheet,
-			Script:       s.Script,
-			SubFrame:     s.SubFrame,
-			Other:        s.Other,
+			XMLHTTPs:     orderMap(s.XMLHTTPs),
+			Images:       orderMap(s.Images),
+			StyleSheets:  orderMap(s.StyleSheets),
+			Scripts:      orderMap(s.Scripts),
+			SubFrames:    orderMap(s.SubFrames),
+			Others:       orderMap(s.Others),
 		})
 	}
+	w.Header().Set("Content-type", "text/html")
 	if err := tmplStats.Execute(w, page); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		log.Print(err)
 	}
 }
 

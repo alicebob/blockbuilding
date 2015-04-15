@@ -1,4 +1,5 @@
 var log_daemon = "http://localhost:1709";
+var blacklistReload = 1 * 60 * 1000;
 
 // tabID -> last loaded URL.
 var activeURL = {};
@@ -141,6 +142,27 @@ function block(hostname, pages) {
         blacklist[hostname] = pages;
     }
 }
+
+function load_blacklist() {
+    new_bl = {}
+    var req = new XMLHttpRequest();
+    req.onreadystatechange = function () {
+        if (this.readyState === 4){
+            // todo: check status
+            entries = JSON.parse(this.response);
+            for (var i = 0; i < entries.length; i++) {
+                console.log("block", entries[i]);
+                new_bl[entries[i]] = null;
+            }
+            blacklist = new_bl;
+        }
+    };
+    req.open('GET', log_daemon + "/list");
+    req.send(null);
+}
+
+load_blacklist();
+setInterval(load_blacklist, blacklistReload);
 
 block("js-agent.newrelic.com");
 block("edge.quantserve.com");

@@ -1,24 +1,28 @@
 package main
 
 import (
+	"bufio"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"golang.org/x/net/publicsuffix"
 )
 
 const (
-	listen  = "localhost:1709"
-	logFile = "log.txt"
+	listen        = "localhost:1709"
+	logFile       = "log.txt"
+	blocklistFile = "blocklist.txt"
 )
 
 type Entry struct {
@@ -59,6 +63,7 @@ func main() {
 
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/log", makeLogHandler(allowed, blocked, c))
+	http.HandleFunc("/list", listHandler)
 	http.HandleFunc("/stats/allowed", makeStatsHandler(allowed))
 	http.HandleFunc("/stats/blocked", makeStatsHandler(blocked))
 
@@ -105,6 +110,24 @@ func makeLogHandler(allowed, blocked DomainStats, f *csv.Writer) func(w http.Res
 		f.Flush()
 		fmt.Fprintf(w, "thanks!")
 	}
+}
+
+func listHandler(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	bl, err := readBlocklist()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-type", "application/json")
+	js, err := json.Marshal(bl)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Write(js)
 }
 
 func makeStatsHandler(stat DomainStats) func(w http.ResponseWriter, r *http.Request) {
@@ -239,4 +262,26 @@ func (s stringCounts) Len() int      { return len(s) }
 func (s stringCounts) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 func (s stringCounts) Less(i, j int) bool {
 	return s[i].int < s[j].int
+}
+
+func readBlocklist() ([]string, error) {
+	f, err := os.Open(blocklistFile)
+	if err != nil {
+		return nil, err
+	}
+	var bl []string
+	b := bufio.NewReader(f)
+	for {
+		l, err := b.ReadString('\n')
+		if err == io.EOF {
+			return bl, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		l = strings.TrimSpace(strings.SplitN(l, "#", 2)[0])
+		if len(l) > 0 {
+			bl = append(bl, l)
+		}
+	}
 }

@@ -1,0 +1,32 @@
+js-agent.newrelic.com
+edge.quantserve.com
+static.chartbeat.com
+stats.g.doubleclick.net
+www.googletagservices.com
+www.googletagmanager.com
+www.google-analytics.com
+# www.google.com", ["/jsapi"]);
+# a.disquscdn.com", ["/count"]);
+# disqus.com", ["/count"]); // http://thedissolve.disqus.com/count.js 
+collector-cdn.github.com # for _stats, mostly.
+gamer-network.net # src: RPS
+b.scorecardresearch.com
+taboola.com # src: RPS
+krxd.net # bbc.com
+me-cdn.effectivemeasure.net # bbc.com
+ivwbox.de # bbc.com
+# pagead2.googlesyndication.com", ["/pagead/show_ads.js"])
+# apis.google.com", ["/js/plusone.js"])
+connect.facebook.net
+graph.facebook.com
+www.googleadservices.com
+captifymedia.com #  wired
+vdna-assets.com #  wired
+inspectlet.com # wired
+clc.stackoverflow.com
+ioam.de # spiegel.de
+meetrics.net # spiegel.de
+adition.com # spiegel.de
+c.spiegel.de # spiegel.de
+mxcdn.net # spiegel.de
+# TODO: kill image http://sa.bbc.co.uk/bbc/bbc/s

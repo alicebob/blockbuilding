@@ -1,0 +1,4 @@
+# things in here won't show up in the GUI.
+.gstatic.com
+fonts.googleapis.com
+ajax.googleapis.com

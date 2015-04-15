@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strings"
 )
 
 type DomainStat struct {
@@ -22,7 +23,7 @@ type DomainStat struct {
 }
 type DomainStats map[string]DomainStat
 
-func readStats() (DomainStats, error) {
+func readStats(ignore []string) (DomainStats, error) {
 	f, err := os.Open(logFile)
 	defer f.Close()
 	if err != nil {
@@ -31,6 +32,7 @@ func readStats() (DomainStats, error) {
 
 	s := DomainStats{}
 	fr := csv.NewReader(f)
+line:
 	for {
 		r, err := fr.Read()
 		if err != nil {
@@ -38,6 +40,12 @@ func readStats() (DomainStats, error) {
 				break
 			}
 			panic(err)
+		}
+		for _, i := range ignore {
+			if matchesDomain(r[3], i) {
+				log.Printf("hiding %s thanks to %s", r[3], i)
+				continue line
+			}
 		}
 		e := Entry{
 			// r[0] is timestamp
@@ -145,4 +153,19 @@ func orderMap(m map[string]int) stringCounts {
 	}
 	sort.Sort(sort.Reverse(r))
 	return r
+}
+
+// is url the domain/prefix of domain?
+func matchesDomain(fullurl, domain string) bool {
+	r, err := url.Parse(fullurl)
+	if err != nil {
+		log.Printf("%q: %s", fullurl, err)
+		return false
+	}
+	// any subdomain
+	if domain[0] == '.' {
+		return strings.HasSuffix(r.Host, domain)
+	}
+	// exact match
+	return r.Host == domain
 }

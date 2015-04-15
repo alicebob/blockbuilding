@@ -23,6 +23,7 @@ const (
 	listen        = "localhost:1709"
 	logFile       = "log.txt"
 	blocklistFile = "blocklist.txt"
+	ignoreFile    = "ignore.txt"
 )
 
 type Entry struct {
@@ -45,8 +46,9 @@ func main() {
 
 	r := httprouter.New()
 	r.GET("/", indexHandler)
-	r.GET("/log", makeLogHandler(c))
+	r.POST("/log", makeLogHandler(c))
 	r.POST("/block/:domain", blockHandler)
+	r.POST("/ignore/:domain", ignoreHandler)
 	r.GET("/list", listHandler)
 	r.GET("/domains", statsHandler)
 
@@ -88,13 +90,26 @@ function block(domain) {
     req.open('POST', "/block/" + domain);
     req.send(null);
 }
+function ignore(domain) {
+	if (confirm("Add " + domain + " to ignore list? (undo by editing ./ignore.txt)")) {
+		var req = new XMLHttpRequest();
+		req.open('POST', "/ignore/" + domain);
+		req.send(null);
+	}
+}
 </script>
 Ordered by subdomain count:<br />
 <br />
 {{range .Domains}}
-	<b>{{.Domain}}</b> <a href="#" onclick="block({{.Domain}}); return false">(block)</a><br />
+	<b>{{.Domain}}</b>
+			<a href="#" onclick="block({{.Domain}}); return false">block</a>
+			<a href="#" onclick="ignore({{.Domain}}); return false">ignore</a>
+		<br />
 	{{if .PublicSuffix}}
-	&nbsp;- suffix: {{.PublicSuffix}} <a href="#" onclick="block({{.PublicSuffix}}); return false">(block)</a><br />
+		&nbsp;- suffix: {{.PublicSuffix}}
+				<a href="#" onclick="block({{.PublicSuffix}}); return false">block</a>
+				<a href="#" onclick="ignore({{.PublicSuffix}}); return false">ignore</a>
+			<br />
 	{{end}}
 
 	&nbsp;- used on domains:<br />
@@ -141,10 +156,17 @@ func makeLogHandler(f *csv.Writer) func(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
-// blockHandler returns the blocklist.
+// blockHandler adds the domain to the block list
 func blockHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	defer r.Body.Close()
-	addBlocklist(ps.ByName("domain"))
+	addDomainFile(blocklistFile, ps.ByName("domain"))
+	fmt.Fprintf(w, "done")
+}
+
+// ignoreHandler adds the domain to the ignore list
+func ignoreHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	defer r.Body.Close()
+	addDomainFile(ignoreFile, ps.ByName("domain"))
 	fmt.Fprintf(w, "done")
 }
 
@@ -152,7 +174,7 @@ func blockHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) 
 func listHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	defer r.Body.Close()
 
-	bl, err := readBlocklist()
+	bl, err := readDomainFile(blocklistFile)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -170,7 +192,13 @@ func listHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 // statsHandler has a page with all unblocked domains
 func statsHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	w.Header().Set("Content-type", "text/html")
-	stat, err := readStats()
+	ign, err := readDomainFile(ignoreFile)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	stat, err := readStats(ign)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -185,6 +213,9 @@ func statsHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	sort.Sort(sort.Reverse(BySrcCount(st)))
 	for _, s := range st {
 		pubsuf, _ := publicsuffix.EffectiveTLDPlusOne(s.Domain)
+		if pubsuf != "" {
+			pubsuf = "." + pubsuf
+		}
 		page.Domains = append(page.Domains, StatsDomain{
 			Domain:       s.Domain,
 			PublicSuffix: pubsuf,
@@ -203,8 +234,8 @@ func statsHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	}
 }
 
-func readBlocklist() ([]string, error) {
-	f, err := os.Open(blocklistFile)
+func readDomainFile(filename string) ([]string, error) {
+	f, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -226,8 +257,8 @@ func readBlocklist() ([]string, error) {
 	}
 }
 
-func addBlocklist(d string) error {
-	f, err := os.OpenFile(blocklistFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
+func addDomainFile(filename, d string) error {
+	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
 	if err != nil {
 		return err
 	}

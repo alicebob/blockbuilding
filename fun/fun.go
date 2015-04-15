@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/julienschmidt/httprouter"
 	"golang.org/x/net/publicsuffix"
 )
 
@@ -42,16 +43,18 @@ func main() {
 	c := csv.NewWriter(f)
 	defer c.Flush()
 
-	http.HandleFunc("/", indexHandler)
-	http.HandleFunc("/log", makeLogHandler(c))
-	http.HandleFunc("/list", listHandler)
-	http.HandleFunc("/domains", statsHandler)
+	r := httprouter.New()
+	r.GET("/", indexHandler)
+	r.GET("/log", makeLogHandler(c))
+	r.POST("/block/:domain", blockHandler)
+	r.GET("/list", listHandler)
+	r.GET("/domains", statsHandler)
 
 	fmt.Printf("listening on %s...\n", listen)
-	log.Fatal(http.ListenAndServe(listen, nil))
+	log.Fatal(http.ListenAndServe(listen, r))
 }
 
-func indexHandler(w http.ResponseWriter, r *http.Request) {
+func indexHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	w.Header().Set("Content-type", "text/html")
 	if err := tmplIndex.Execute(w, nil); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -62,8 +65,63 @@ var tmplIndex = template.Must(template.New("index").Parse(`Stats:<br />
 <a href="/domains">Domains by 3rdparty usage</a><br />
 `))
 
-func makeLogHandler(f *csv.Writer) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
+type StatsDomain struct {
+	Domain       string
+	PublicSuffix string
+	SrcDomains   stringCounts
+	URLs         stringCounts
+	XMLHTTP      int
+	Image        int
+	StyleSheet   int
+	Script       int
+	SubFrame     int
+	Other        int
+}
+type StatsPage struct {
+	Domains []StatsDomain
+}
+
+var tmplStats = template.Must(template.New("stat").Parse(`
+<script>
+function block(domain) {
+    var req = new XMLHttpRequest();
+    req.open('POST', "/block/" + domain);
+    req.send(null);
+}
+</script>
+Ordered by subdomain count:<br />
+<br />
+{{range .Domains}}
+	<b>{{.Domain}}</b> <a href="#" onclick="block({{.Domain}}); return false">(block)</a><br />
+	{{if .PublicSuffix}}
+	&nbsp;- suffix: {{.PublicSuffix}} <a href="#" onclick="block({{.PublicSuffix}}); return false">(block)</a><br />
+	{{end}}
+
+	&nbsp;- used on domains:<br />
+	{{range .SrcDomains}}
+	&nbsp;&nbsp;&nbsp;- {{.String}} ({{.Count}})<br />
+	{{end}}
+
+	&nbsp;- usage:
+		{{if .XMLHTTP}}xmlhttp: {{.XMLHTTP}}{{end}}
+		{{if .Image}}image: {{.Image}}{{end}}
+		{{if .StyleSheet}}stylesheet: {{.StyleSheet}}{{end}}
+		{{if .Script}}script: {{.Script}}{{end}}
+		{{if .SubFrame}}subFrame: {{.SubFrame}}{{end}}
+		{{if .Other}}other: {{.Other}}{{end}}
+		<br />
+
+	&nbsp;- urls:<br />
+	{{range .URLs}}
+	&nbsp;&nbsp;&nbsp;- {{.String}} ({{.Count}})<br />
+	{{end}}
+
+	<br />
+{{end}}
+`))
+
+func makeLogHandler(f *csv.Writer) func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	return func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		b, _ := ioutil.ReadAll(r.Body)
 		var e Entry
 		if err := json.Unmarshal(b, &e); err != nil {
@@ -83,8 +141,15 @@ func makeLogHandler(f *csv.Writer) func(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// blockHandler returns the blocklist.
+func blockHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	defer r.Body.Close()
+	addBlocklist(ps.ByName("domain"))
+	fmt.Fprintf(w, "done")
+}
+
 // listHandler returns the blocklist.
-func listHandler(w http.ResponseWriter, r *http.Request) {
+func listHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	defer r.Body.Close()
 
 	bl, err := readBlocklist()
@@ -102,70 +167,40 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(js)
 }
 
-func statsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-type", "text/plain")
+// statsHandler has a page with all unblocked domains
+func statsHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	w.Header().Set("Content-type", "text/html")
 	stat, err := readStats()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	fmt.Fprintf(w, "Ordered by subdomain count:\n")
+	page := StatsPage{}
+
 	st := make([]DomainStat, 0, len(stat))
 	for _, s := range stat {
 		st = append(st, s)
 	}
 	sort.Sort(sort.Reverse(BySrcCount(st)))
 	for _, s := range st {
-		fmt.Fprintf(w, "%s\n", s.Domain)
-		pubsuf, err := publicsuffix.EffectiveTLDPlusOne(s.Domain)
-		if err != nil {
-			log.Printf("publicsuffix for %s: %s", s.Domain, err)
-			pubsuf = "unknown"
-		}
-		fmt.Fprintf(w, "  - public suffix: %s\n", pubsuf)
-		fmt.Fprintf(w, "  - domains:\n")
-		for _, u := range orderMap(s.SrcDomains) {
-			fmt.Fprintf(w, "    - %s (%d)\n", u.string, u.int)
-		}
-		fmt.Fprintf(w, "  - usage: ")
-		if s.XMLHTTP > 0 {
-			fmt.Fprintf(w, " xmlhttp: %d", s.XMLHTTP)
-		}
-		if s.Image > 0 {
-			fmt.Fprintf(w, " image: %d", s.Image)
-		}
-		if s.StyleSheet > 0 {
-			fmt.Fprintf(w, " stylesheet: %d", s.StyleSheet)
-		}
-		if s.Script > 0 {
-			fmt.Fprintf(w, " script: %d", s.Script)
-		}
-		if s.SubFrame > 0 {
-			fmt.Fprintf(w, " subFrame: %d", s.SubFrame)
-		}
-		if s.Other > 0 {
-			fmt.Fprintf(w, " other: %d", s.Other)
-		}
-		fmt.Fprintf(w, "\n")
-		fmt.Fprintf(w, "  - urls:\n")
-		for _, u := range orderMap(s.URLs) {
-			fmt.Fprintf(w, "    - %s (%d)\n", u.string, u.int)
-		}
-		fmt.Fprintf(w, "\n")
+		pubsuf, _ := publicsuffix.EffectiveTLDPlusOne(s.Domain)
+		page.Domains = append(page.Domains, StatsDomain{
+			Domain:       s.Domain,
+			PublicSuffix: pubsuf,
+			SrcDomains:   orderMap(s.SrcDomains),
+			URLs:         orderMap(s.URLs),
+			XMLHTTP:      s.XMLHTTP,
+			Image:        s.Image,
+			StyleSheet:   s.StyleSheet,
+			Script:       s.Script,
+			SubFrame:     s.SubFrame,
+			Other:        s.Other,
+		})
 	}
-}
-
-type stringCount struct {
-	string
-	int
-}
-type stringCounts []stringCount
-
-func (s stringCounts) Len() int      { return len(s) }
-func (s stringCounts) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
-func (s stringCounts) Less(i, j int) bool {
-	return s[i].int < s[j].int
+	if err := tmplStats.Execute(w, page); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+	}
 }
 
 func readBlocklist() ([]string, error) {
@@ -173,6 +208,7 @@ func readBlocklist() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
 	var bl []string
 	b := bufio.NewReader(f)
 	for {
@@ -188,4 +224,14 @@ func readBlocklist() ([]string, error) {
 			bl = append(bl, l)
 		}
 	}
+}
+
+func addBlocklist(d string) error {
+	f, err := os.OpenFile(blocklistFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "%s\n", d)
+	return nil
 }

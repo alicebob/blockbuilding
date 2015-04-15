@@ -30,3 +30,5 @@ adition.com # spiegel.de
 c.spiegel.de # spiegel.de
 mxcdn.net # spiegel.de
 # TODO: kill image http://sa.bbc.co.uk/bbc/bbc/s
+pixel.wp.com
+ssl.google-analytics.com

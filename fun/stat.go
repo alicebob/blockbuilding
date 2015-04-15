@@ -122,6 +122,21 @@ func (s BySrcCount) Less(i, j int) bool {
 	return s[i].Image < s[j].Image
 }
 
+type stringCount struct {
+	String string
+	Count  int
+}
+type stringCounts []stringCount
+
+func (s stringCounts) Len() int      { return len(s) }
+func (s stringCounts) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+func (s stringCounts) Less(i, j int) bool {
+	if s[i].Count != s[j].Count {
+		return s[i].Count < s[j].Count
+	}
+	return s[i].String < s[j].String
+}
+
 // convert a string count map to a string lost, order by count desc.
 func orderMap(m map[string]int) stringCounts {
 	r := make(stringCounts, 0, len(m))

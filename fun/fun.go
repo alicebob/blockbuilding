@@ -77,6 +77,18 @@ type StatsPage struct {
 }
 
 var tmplStats = template.Must(template.New("stat").Parse(`
+<head>
+	<style>
+		ul ul ul {
+			overflow: auto;
+			background-color: #EEE;
+			white-space: nowrap;
+		}
+		ul ul ul a {
+			color: black;
+		}
+	</style>
+</head>
 <script>
 function block(domain) {
     var req = new XMLHttpRequest();

@@ -37,3 +37,7 @@ ssl.google-analytics.com
 p.typekit.net
 stats.wp.com
 audit.median.hu
+collector.githubapp.com
+a.analytics.yahoo.com
+sa.bbc.co.uk
+.scorecardresearch.com

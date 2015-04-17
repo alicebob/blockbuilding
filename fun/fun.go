@@ -77,6 +77,22 @@ type StatsPage struct {
 }
 
 var tmplStats = template.Must(template.New("stat").Parse(`
+
+{{define "tlist"}}
+	<ul>
+		<div class="toggle">
+			<div class="main">
+				<a href="#" onclick="return toggle(this)" class="toggler">▼</a>
+				{{range .}}
+				<li><a href="{{.String}}" target="_blank">{{.String}}</a> ({{.Count}})</li>
+				{{end}}
+			</div>
+			<div class="open">
+				<a href="#" onclick="return toggle(this)" class="toggler">►</a>
+			</div>
+		</div>
+	</ul>
+{{end}}
 <head>
 	<style>
 		ul ul ul {
@@ -86,6 +102,21 @@ var tmplStats = template.Must(template.New("stat").Parse(`
 		}
 		ul ul ul a {
 			color: black;
+		}
+		.toggle .main {
+			display: none;
+		}
+		.toggle.hide .main {
+			display: block;
+		}
+		.toggle .open {
+			display: block;
+		}
+		.toggle.hide .open {
+			display: none;
+		}
+		.toggle a.toggler {
+			text-decoration: none;
 		}
 	</style>
 </head>
@@ -101,6 +132,17 @@ function ignore(domain) {
 		req.open('POST', "/ignore/" + domain);
 		req.send(null);
 	}
+}
+
+function toggle(el) {
+	// div -> div -> a
+	var cl = el.parentNode.parentNode.classList;
+	if (cl.contains("hide")) {
+		cl.remove("hide");
+	} else {
+		cl.add("hide");
+	}
+	return false
 }
 </script>
 Ordered by subdomain count:<br />
@@ -128,52 +170,34 @@ Ordered by subdomain count:<br />
 
 	<li>usage:
 		<ul>
-		{{if .XMLHTTPs}}<li>xmlhttps: {{len .XMLHTTPs}}<br />
-			<ul>
-				{{range .XMLHTTPs}}
-				<li>{{.String}} ({{.Count}})</li>
-				{{end}}
-			</ul>
+		{{if .XMLHTTPs}}
+			<li>xmlhttps: {{len .XMLHTTPs}}<br />
+				{{ template "tlist" .XMLHTTPs }}
 			</li>
 		{{end}}
-		{{if .Images}}<li>images: {{len .Images}}<br />
-			<ul>
-				{{range .Images}}
-				<li><a href="{{.String}}" target="_blank">{{.String}}</a> ({{.Count}})</li>
-				{{end}}
-			</ul>
+		{{if .Images}}
+			<li>images: {{len .Images}}<br />
+				{{ template "tlist" .Images }}
 			</li>
 		{{end}}
-		{{if .StyleSheets}}<li>stylesheets: {{len .StyleSheets}}<br />
-			<ul>
-				{{range .StyleSheets}}
-				<li>{{.String}} ({{.Count}})</li>
-				{{end}}
-			</ul>
+		{{if .StyleSheets}}
+			<li>stylesheets: {{len .StyleSheets}}<br />
+				{{ template "tlist" .StyleSheets }}
 			</li>
 		{{end}}
-		{{if .Scripts}}<li>scripts: {{len .Scripts}}<br />
-			<ul>
-				{{range .Scripts}}
-				<li>{{.String}} ({{.Count}})</li>
-				{{end}}
-			</ul>
+		{{if .Scripts}}
+			<li>scripts: {{len .Scripts}}<br />
+				{{ template "tlist" .Scripts }}
 			</li>
 		{{end}}
-		{{if .SubFrames}}<li>subframes: {{len .SubFrames}}<br />
-			<ul>
-				{{range .SubFrames}}
-				<li>{{.String}} ({{.Count}})</li>
-				{{end}}
-			</ul>
+		{{if .SubFrames}}
+			<li>subframes: {{len .SubFrames}}<br />
+				{{ template "tlist" .SubFrames }}
 			</li>
 		{{end}}
-		{{if .Others}}<li>others: {{len .Others}}<br />
-			<ul>
-				{{range .Others}}
-				<li>{{.String}} ({{.Count}})</li>
-				{{end}}
-			</ul>
+		{{if .Others}}
+			<li>others: {{len .Others}}<br />
+				{{ template "tlist" .Others }}
 			</li>
 		{{end}}
 		</ul>

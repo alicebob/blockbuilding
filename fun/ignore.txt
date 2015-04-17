@@ -3,3 +3,5 @@
 fonts.googleapis.com
 ajax.googleapis.com
 mail.google.com
+.bootstrapcdn.com
+.rockpapershotgun.com

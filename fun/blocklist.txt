@@ -42,3 +42,13 @@ a.analytics.yahoo.com
 sa.bbc.co.uk
 .scorecardresearch.com
 feeds.feedburner.com
+platform.twitter.com
+syndication.twitter.com
+.addthis.com
+c.go-mpulse.net
+m.exactag.com
+cdn.exactag.com
+m.addthis.com
+cdn.syndication.twimg.com
+tags.tiqcdn.com
+.mpstat.us

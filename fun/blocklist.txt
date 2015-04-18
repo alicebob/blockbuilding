@@ -83,3 +83,4 @@ fast.cbsi.demdex.net
 .adobetag.com
 in.getclicky.com
 t.skimresources.com
+vodafone.inq.com

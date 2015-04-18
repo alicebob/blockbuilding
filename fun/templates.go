@@ -92,9 +92,16 @@ var tmpl = template.Must(template.New("all").Parse(`
 
 {{define "page_unblocked"}}
 	{{template "header"}}
-	Ordered by subdomain count:<br />
+	<h1>3rd party domain usage</h1>
+	{{ if .filters }}
+	Effectively unblocked requests: <a href="?full=1">no block</a>
+	{{ else }}
+	All requests: <a href="?">with blocks</a>
+	{{ end }}
 	<br />
-	{{range .Domains}}
+	Ordered by subdomain count.<br />
+	<br />
+	{{range .stats.Domains}}
 		<b>{{.Domain}}</b>
 				<a href="#" onclick="block({{.Domain}}); return false">block</a>
 				<a href="#" onclick="ignore({{.Domain}}); return false">ignore</a>
@@ -158,10 +165,9 @@ var tmpl = template.Must(template.New("all").Parse(`
 
 {{define "page_log"}}
 	{{template "header"}}
-	3rd party domains used by <b>{{.subject}}</b>:<br />
-	<br />
+	<h1>Pages originating from {{.subject}}</h1>
 	{{range .stats.Domains}}
-		<b>{{.Domain}}</b>
+		<b>{{.Domain}}</b> <a href="/unblocked/{{ .Domain }}">full</a>
 		<ul>
 		{{if .XMLHTTPs}}
 			<li>xmlhttps: {{len .XMLHTTPs}}<br />

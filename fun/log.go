@@ -15,7 +15,9 @@ type Entry struct {
 	TabURL string `json:"tab"`
 }
 
-func readLog(filename string, cb func(e Entry)) error {
+type logFilter func(Entry)
+
+func readLog(filename string, cb logFilter) error {
 	f, err := os.Open(logFile)
 	defer f.Close()
 	if err != nil {

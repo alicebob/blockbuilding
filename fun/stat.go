@@ -30,35 +30,51 @@ func (d DomainStat) URLcount() int {
 		len(d.Others)
 }
 
-// readStats reads the log and generate some statistics.
-// Only non-blocked entries are considered.
-// Domains matching block will be ignored even when they are accepted in the
-// log file. The usecase is to hide log entries from before a block was added.
-// Domains matching ignore will be ignored.
-func readStats(block, ignore []string) (DomainStats, error) {
+// sink filter.
+func filterCount() (DomainStats, logFilter) {
 	s := DomainStats{}
-	if err := readLog(logFile, func(e Entry) {
-		if e.Action != "allow" {
+	return s, func(e Entry) {
+		s.Count(e)
+	}
+}
+
+func filterURL(urls []string, next logFilter) logFilter {
+	return func(e Entry) {
+		for _, i := range urls {
+			if matchesDomain(e.URL, i) {
+				return
+			}
+		}
+		next(e)
+	}
+}
+
+func filterDomain(dom string, next logFilter) logFilter {
+	return func(e Entry) {
+		r, err := url.Parse(e.URL)
+		if err != nil {
+			log.Printf("%q: %s", e.URL, err)
 			return
 		}
-
-		for _, i := range block {
-			if matchesDomain(e.URL, i) {
-				log.Printf("post-facto blocking %s thanks to %s", e.URL, i)
-				return
-			}
+		if r.Host != dom {
+			return
 		}
-		for _, i := range ignore {
-			if matchesDomain(e.URL, i) {
-				// log.Printf("hiding %s thanks to %s", e.URL, i)
-				return
-			}
-		}
-		s.Count(e)
-	}); err != nil {
-		return nil, err
+		next(e)
 	}
-	return s, nil
+}
+
+func filterTabDomain(dom string, next logFilter) logFilter {
+	return func(e Entry) {
+		r, err := url.Parse(e.TabURL)
+		if err != nil {
+			log.Printf("%q: %s", e.TabURL, err)
+			return
+		}
+		if r.Host != dom {
+			return
+		}
+		next(e)
+	}
 }
 
 func (s DomainStats) Count(e Entry) {

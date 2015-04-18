@@ -9,7 +9,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -35,6 +34,7 @@ func main() {
 	r.POST("/ignore/:domain", ignoreHandler)
 	r.GET("/list", listHandler)
 	r.GET("/unblocked", statsHandler)
+	r.GET("/unblocked/:domain", statsHandler)
 	r.GET("/srclog/:domain", srclogHandler)
 
 	fmt.Printf("listening on %s...\n", listen)
@@ -125,28 +125,50 @@ func listHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 }
 
 // statsHandler has a page with all unblocked domains
-func statsHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	block, err := readDomainFile(blocklistFile)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
+func statsHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	dom := ps.ByName("domain")
+
+	stat, f := filterCount()
+
+	noFilters := r.URL.Query().Get("full") != ""
+
+	// Maybe limit to single domain.
+	if dom != "" {
+		f = filterDomain(dom, f)
 	}
 
-	ign, err := readDomainFile(ignoreFile)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
+	if !noFilters {
+		// Blocklist
+		if block, err := readDomainFile(blocklistFile); err != nil {
+			log.Print(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		} else {
+			f = filterURL(block, f)
+		}
+
+		// Ignorelist
+		if ign, err := readDomainFile(ignoreFile); err != nil {
+			log.Print(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		} else {
+			f = filterURL(ign, f)
+		}
 	}
 
-	stat, err := readStats(block, ign)
-	if err != nil {
+	if err := readLog(logFile, f); err != nil {
+		log.Print(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	page := toPageStats(stat)
 	w.Header().Set("Content-type", "text/html; charset=utf-8")
-	if err := tmpl.ExecuteTemplate(w, "page_unblocked", page); err != nil {
+	if err := tmpl.ExecuteTemplate(w, "page_unblocked", map[string]interface{}{
+		"filters": !noFilters,
+		"stats":   page,
+	}); err != nil {
 		log.Print(err)
 	}
 }
@@ -154,24 +176,18 @@ func statsHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 // srclogHandler has a page with all requests from a source domain.
 func srclogHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	dom := ps.ByName("domain")
-	s := DomainStats{}
-	if err := readLog(logFile, func(e Entry) {
-		u, err := url.Parse(e.TabURL)
-		if err != nil {
-			return
-		}
-		if u.Host != dom {
-			return
-		}
-		s.Count(e)
-	}); err != nil {
+	stat, f := filterCount()
+	f = filterTabDomain(dom, f)
+
+	if err := readLog(logFile, f); err != nil {
+		log.Print(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, "page_log", map[string]interface{}{
 		"subject": dom,
-		"stats":   toPageStats(s),
+		"stats":   toPageStats(stat),
 	}); err != nil {
 		log.Print(err)
 	}

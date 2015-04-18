@@ -1,11 +1,8 @@
 package main
 
 import (
-	"encoding/csv"
-	"io"
 	"log"
 	"net/url"
-	"os"
 	"sort"
 	"strings"
 )
@@ -23,56 +20,43 @@ type DomainStat struct {
 }
 type DomainStats map[string]DomainStat
 
+// number of distinct urls.
+func (d DomainStat) URLcount() int {
+	return len(d.XMLHTTPs) +
+		len(d.Images) +
+		len(d.StyleSheets) +
+		len(d.Scripts) +
+		len(d.SubFrames) +
+		len(d.Others)
+}
+
 // readStats reads the log and generate some statistics.
 // Only non-blocked entries are considered.
 // Domains matching block will be ignored even when they are accepted in the
 // log file. The usecase is to hide log entries from before a block was added.
 // Domains matching ignore will be ignored.
 func readStats(block, ignore []string) (DomainStats, error) {
-	f, err := os.Open(logFile)
-	defer f.Close()
-	if err != nil {
-		return nil, err
-	}
-
 	s := DomainStats{}
-	fr := csv.NewReader(f)
-line:
-	for {
-		r, err := fr.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			panic(err)
-		}
-
-		e := Entry{
-			// r[0] is timestamp
-			Action: r[1],
-			Type:   r[2],
-			URL:    r[3],
-			// TabID
-			TabURL: r[4],
-		}
-
+	if err := readLog(logFile, func(e Entry) {
 		if e.Action != "allow" {
-			continue line
+			return
 		}
 
 		for _, i := range block {
 			if matchesDomain(e.URL, i) {
-				log.Printf("post-facto blocking %s thanks to %s", r[3], i)
-				continue line
+				log.Printf("post-facto blocking %s thanks to %s", e.URL, i)
+				return
 			}
 		}
 		for _, i := range ignore {
-			if matchesDomain(r[3], i) {
-				// log.Printf("hiding %s thanks to %s", r[3], i)
-				continue line
+			if matchesDomain(e.URL, i) {
+				// log.Printf("hiding %s thanks to %s", e.URL, i)
+				return
 			}
 		}
 		s.Count(e)
+	}); err != nil {
+		return nil, err
 	}
 	return s, nil
 }
@@ -139,7 +123,10 @@ func (s BySrcCount) Less(i, j int) bool {
 	if len(s[i].SrcDomains) != len(s[j].SrcDomains) {
 		return len(s[i].SrcDomains) < len(s[j].SrcDomains)
 	}
-	return s[i].URL < s[j].URL
+	if ic, jc := s[i].URLcount(), s[j].URLcount(); ic != jc {
+		return ic < jc
+	}
+	return s[i].Domain < s[j].Domain
 }
 
 type stringCount struct {

@@ -5,11 +5,11 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -26,15 +26,6 @@ const (
 	ignoreFile    = "ignore.txt"
 )
 
-type Entry struct {
-	Action string `json:"action"`
-	Type   string `json:"type"`
-	URL    string `json:"url"`
-	Reason string `json:"reason"`
-	TabID  int    `json:"tabId"`
-	TabURL string `json:"tab"`
-}
-
 func main() {
 
 	r := httprouter.New()
@@ -43,23 +34,20 @@ func main() {
 	r.POST("/block/:domain", blockHandler)
 	r.POST("/ignore/:domain", ignoreHandler)
 	r.GET("/list", listHandler)
-	r.GET("/domains", statsHandler)
+	r.GET("/unblocked", statsHandler)
+	r.GET("/srclog/:domain", srclogHandler)
 
 	fmt.Printf("listening on %s...\n", listen)
 	log.Fatal(http.ListenAndServe(listen, r))
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	w.Header().Set("Content-type", "text/html")
-	if err := tmplIndex.Execute(w, nil); err != nil {
+	w.Header().Set("Content-type", "text/html; charset=utf-8")
+	if err := tmpl.ExecuteTemplate(w, "page_index", nil); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 }
-
-var tmplIndex = template.Must(template.New("index").Parse(`Stats:<br />
-<a href="/domains">Domains by 3rdparty usage</a><br />
-`))
 
 type StatsDomain struct {
 	Domain       string
@@ -75,138 +63,6 @@ type StatsDomain struct {
 type StatsPage struct {
 	Domains []StatsDomain
 }
-
-var tmplStats = template.Must(template.New("stat").Parse(`
-
-{{define "tlist"}}
-	<ul>
-		<div class="toggle">
-			<div class="main">
-				<a href="#" onclick="return toggle(this)" class="toggler">▼</a>
-				{{range .}}
-				<li><a href="{{.String}}" target="_blank">{{.String}}</a> ({{.Count}})</li>
-				{{end}}
-			</div>
-			<div class="open">
-				<a href="#" onclick="return toggle(this)" class="toggler">►</a>
-			</div>
-		</div>
-	</ul>
-{{end}}
-<head>
-	<style>
-		ul ul ul {
-			overflow: auto;
-			background-color: #EEE;
-			white-space: nowrap;
-		}
-		ul ul ul a {
-			color: black;
-		}
-		.toggle .main {
-			display: none;
-		}
-		.toggle.hide .main {
-			display: block;
-		}
-		.toggle .open {
-			display: block;
-		}
-		.toggle.hide .open {
-			display: none;
-		}
-		.toggle a.toggler {
-			text-decoration: none;
-		}
-	</style>
-</head>
-<script>
-function block(domain) {
-    var req = new XMLHttpRequest();
-    req.open('POST', "/block/" + domain);
-    req.send(null);
-}
-function ignore(domain) {
-	if (confirm("Add " + domain + " to ignore list? (undo by editing ./ignore.txt)")) {
-		var req = new XMLHttpRequest();
-		req.open('POST', "/ignore/" + domain);
-		req.send(null);
-	}
-}
-
-function toggle(el) {
-	// div -> div -> a
-	var cl = el.parentNode.parentNode.classList;
-	if (cl.contains("hide")) {
-		cl.remove("hide");
-	} else {
-		cl.add("hide");
-	}
-	return false
-}
-</script>
-Ordered by subdomain count:<br />
-<br />
-{{range .Domains}}
-	<b>{{.Domain}}</b>
-			<a href="#" onclick="block({{.Domain}}); return false">block</a>
-			<a href="#" onclick="ignore({{.Domain}}); return false">ignore</a>
-		<br />
-	<ul>
-	{{if .PublicSuffix}}
-		<li>suffix: {{.PublicSuffix}}
-				<a href="#" onclick="block({{.PublicSuffix}}); return false">block</a>
-				<a href="#" onclick="ignore({{.PublicSuffix}}); return false">ignore</a>
-		</li>
-	{{end}}
-
-	<li>used on domains:
-		<ul>
-		{{range .SrcDomains}}
-		<li>{{.String}} ({{.Count}})</li>
-		{{end}}
-		</ul>
-	</li>
-
-	<li>usage:
-		<ul>
-		{{if .XMLHTTPs}}
-			<li>xmlhttps: {{len .XMLHTTPs}}<br />
-				{{ template "tlist" .XMLHTTPs }}
-			</li>
-		{{end}}
-		{{if .Images}}
-			<li>images: {{len .Images}}<br />
-				{{ template "tlist" .Images }}
-			</li>
-		{{end}}
-		{{if .StyleSheets}}
-			<li>stylesheets: {{len .StyleSheets}}<br />
-				{{ template "tlist" .StyleSheets }}
-			</li>
-		{{end}}
-		{{if .Scripts}}
-			<li>scripts: {{len .Scripts}}<br />
-				{{ template "tlist" .Scripts }}
-			</li>
-		{{end}}
-		{{if .SubFrames}}
-			<li>subframes: {{len .SubFrames}}<br />
-				{{ template "tlist" .SubFrames }}
-			</li>
-		{{end}}
-		{{if .Others}}
-			<li>others: {{len .Others}}<br />
-				{{ template "tlist" .Others }}
-			</li>
-		{{end}}
-		</ul>
-	</li>
-	</ul>
-
-	<br />
-{{end}}
-`))
 
 func logHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	b, _ := ioutil.ReadAll(r.Body)
@@ -288,32 +144,35 @@ func statsHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		return
 	}
 
-	page := StatsPage{}
+	page := toPageStats(stat)
+	w.Header().Set("Content-type", "text/html; charset=utf-8")
+	if err := tmpl.ExecuteTemplate(w, "page_unblocked", page); err != nil {
+		log.Print(err)
+	}
+}
 
-	st := make([]DomainStat, 0, len(stat))
-	for _, s := range stat {
-		st = append(st, s)
-	}
-	sort.Sort(sort.Reverse(BySrcCount(st)))
-	for _, s := range st {
-		pubsuf, _ := publicsuffix.EffectiveTLDPlusOne(s.Domain)
-		if pubsuf != "" {
-			pubsuf = "." + pubsuf
+// srclogHandler has a page with all requests from a source domain.
+func srclogHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	dom := ps.ByName("domain")
+	s := DomainStats{}
+	if err := readLog(logFile, func(e Entry) {
+		u, err := url.Parse(e.TabURL)
+		if err != nil {
+			return
 		}
-		page.Domains = append(page.Domains, StatsDomain{
-			Domain:       s.Domain,
-			PublicSuffix: pubsuf,
-			SrcDomains:   orderMap(s.SrcDomains),
-			XMLHTTPs:     orderMap(s.XMLHTTPs),
-			Images:       orderMap(s.Images),
-			StyleSheets:  orderMap(s.StyleSheets),
-			Scripts:      orderMap(s.Scripts),
-			SubFrames:    orderMap(s.SubFrames),
-			Others:       orderMap(s.Others),
-		})
+		if u.Host != dom {
+			return
+		}
+		s.Count(e)
+	}); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
-	w.Header().Set("Content-type", "text/html")
-	if err := tmplStats.Execute(w, page); err != nil {
+	w.Header().Set("Content-type", "text/html; charset=utf-8")
+	if err := tmpl.ExecuteTemplate(w, "page_log", map[string]interface{}{
+		"subject": dom,
+		"stats":   toPageStats(s),
+	}); err != nil {
 		log.Print(err)
 	}
 }
@@ -349,4 +208,32 @@ func addDomainFile(filename, d string) error {
 	defer f.Close()
 	fmt.Fprintf(f, "%s\n", d)
 	return nil
+}
+
+func toPageStats(stat DomainStats) StatsPage {
+	st := make([]DomainStat, 0, len(stat))
+	for _, s := range stat {
+		st = append(st, s)
+	}
+	sort.Sort(sort.Reverse(BySrcCount(st)))
+
+	page := StatsPage{}
+	for _, s := range st {
+		pubsuf, _ := publicsuffix.EffectiveTLDPlusOne(s.Domain)
+		if pubsuf != "" {
+			pubsuf = "." + pubsuf
+		}
+		page.Domains = append(page.Domains, StatsDomain{
+			Domain:       s.Domain,
+			PublicSuffix: pubsuf,
+			SrcDomains:   orderMap(s.SrcDomains),
+			XMLHTTPs:     orderMap(s.XMLHTTPs),
+			Images:       orderMap(s.Images),
+			StyleSheets:  orderMap(s.StyleSheets),
+			Scripts:      orderMap(s.Scripts),
+			SubFrames:    orderMap(s.SubFrames),
+			Others:       orderMap(s.Others),
+		})
+	}
+	return page
 }

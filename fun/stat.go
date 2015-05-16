@@ -33,48 +33,43 @@ func (d DomainStat) URLcount() int {
 // sink filter.
 func filterCount() (DomainStats, logFilter) {
 	s := DomainStats{}
-	return s, func(e Entry) {
-		s.Count(e)
+	return s, func(e Entry, u *url.URL) {
+		s.Count(e, u)
 	}
 }
 
 // filter everything which was logged as blocked.
 func filterBlocked(next logFilter) logFilter {
-	return func(e Entry) {
+	return func(e Entry, u *url.URL) {
 		if e.Action == "block" {
 			return
 		}
-		next(e)
+		next(e, u)
 	}
 }
 
 func filterURL(urls []string, next logFilter) logFilter {
-	return func(e Entry) {
+	return func(e Entry, u *url.URL) {
 		for _, i := range urls {
-			if matchesDomain(e.URL, i) {
+			if matchesDomain(u, i) {
 				return
 			}
 		}
-		next(e)
+		next(e, u)
 	}
 }
 
 func filterDomain(dom string, next logFilter) logFilter {
-	return func(e Entry) {
-		r, err := url.Parse(e.URL)
-		if err != nil {
-			log.Printf("%q: %s", e.URL, err)
+	return func(e Entry, u *url.URL) {
+		if u.Host != dom {
 			return
 		}
-		if r.Host != dom {
-			return
-		}
-		next(e)
+		next(e, u)
 	}
 }
 
 func filterTabDomain(dom string, next logFilter) logFilter {
-	return func(e Entry) {
+	return func(e Entry, u *url.URL) {
 		r, err := url.Parse(e.TabURL)
 		if err != nil {
 			log.Printf("%q: %s", e.TabURL, err)
@@ -83,16 +78,12 @@ func filterTabDomain(dom string, next logFilter) logFilter {
 		if r.Host != dom {
 			return
 		}
-		next(e)
+		next(e, u)
 	}
 }
 
-func (s DomainStats) Count(e Entry) {
-	rURL, err := url.Parse(e.URL)
-	if err != nil {
-		panic(err)
-	}
-	if rURL.Scheme == "chrome-extension" {
+func (s DomainStats) Count(e Entry, u *url.URL) {
+	if u.Scheme == "chrome-extension" {
 		return
 	}
 
@@ -100,12 +91,12 @@ func (s DomainStats) Count(e Entry) {
 	if err != nil {
 		panic(err)
 	}
-	if rURL.Host == tURL.Host {
+	if u.Host == tURL.Host {
 		// same domain. Not interesting.
 		return
 	}
 
-	d, ok := s[rURL.Host]
+	d, ok := s[u.Host]
 	if !ok {
 		d = DomainStat{
 			SrcDomains:  map[string]int{},
@@ -118,7 +109,7 @@ func (s DomainStats) Count(e Entry) {
 		}
 	}
 
-	d.Domain = rURL.Host
+	d.Domain = u.Host
 	switch e.Type {
 	case "xmlhttprequest":
 		d.XMLHTTPs[e.URL]++
@@ -137,8 +128,7 @@ func (s DomainStats) Count(e Entry) {
 	}
 	d.SrcDomains[tURL.Host]++
 	d.URL++
-
-	s[rURL.Host] = d
+	s[u.Host] = d
 }
 
 type BySrcCount []DomainStat
@@ -181,16 +171,11 @@ func orderMap(m map[string]int) stringCounts {
 }
 
 // is url the domain/prefix of domain?
-func matchesDomain(fullurl, domain string) bool {
-	r, err := url.Parse(fullurl)
-	if err != nil {
-		log.Printf("%q: %s", fullurl, err)
-		return false
-	}
+func matchesDomain(u *url.URL, domain string) bool {
 	// any subdomain
 	if domain[0] == '.' {
-		return strings.HasSuffix(r.Host, domain)
+		return strings.HasSuffix(u.Host, domain)
 	}
 	// exact match
-	return r.Host == domain
+	return u.Host == domain
 }

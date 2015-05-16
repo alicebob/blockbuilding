@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/csv"
 	"io"
+	"log"
+	"net/url"
 	"os"
 )
 
@@ -15,7 +17,7 @@ type Entry struct {
 	TabURL string `json:"tab"`
 }
 
-type logFilter func(Entry)
+type logFilter func(Entry, *url.URL)
 
 func readLog(filename string, cb logFilter) error {
 	f, err := os.Open(logFile)
@@ -34,13 +36,19 @@ func readLog(filename string, cb logFilter) error {
 			panic(err)
 		}
 
+		reqURL := r[3]
+		u, err := url.Parse(reqURL)
+		if err != nil {
+			log.Printf("url %q: %s", reqURL, err)
+			continue
+		}
 		cb(Entry{
 			// r[0] is timestamp
 			Action: r[1],
 			Type:   r[2],
-			URL:    r[3],
+			URL:    reqURL,
 			TabURL: r[4],
-		})
+		}, u)
 	}
 	return nil
 }

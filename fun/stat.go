@@ -38,6 +38,16 @@ func filterCount() (DomainStats, logFilter) {
 	}
 }
 
+// filter everything which was logged as blocked.
+func filterBlocked(next logFilter) logFilter {
+	return func(e Entry) {
+		if e.Action == "block" {
+			return
+		}
+		next(e)
+	}
+}
+
 func filterURL(urls []string, next logFilter) logFilter {
 	return func(e Entry) {
 		for _, i := range urls {
@@ -160,7 +170,7 @@ func (s stringCounts) Less(i, j int) bool {
 	return s[i].String < s[j].String
 }
 
-// convert a string count map to a string lost, order by count desc.
+// convert a string count map to a string list, order by count desc.
 func orderMap(m map[string]int) stringCounts {
 	r := make(stringCounts, 0, len(m))
 	for k, c := range m {

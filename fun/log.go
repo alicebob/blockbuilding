@@ -39,7 +39,6 @@ func readLog(filename string, cb logFilter) error {
 			Action: r[1],
 			Type:   r[2],
 			URL:    r[3],
-			// TabID
 			TabURL: r[4],
 		})
 	}

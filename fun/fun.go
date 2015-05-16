@@ -26,7 +26,6 @@ const (
 )
 
 func main() {
-
 	r := httprouter.New()
 	r.GET("/", indexHandler)
 	r.POST("/log", logHandler)
@@ -131,6 +130,8 @@ func statsHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) 
 	stat, f := filterCount()
 
 	noFilters := r.URL.Query().Get("full") != ""
+
+	f = filterBlocked(f)
 
 	// Maybe limit to single domain.
 	if dom != "" {
